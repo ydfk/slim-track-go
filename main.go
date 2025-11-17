@@ -11,10 +11,17 @@ import (
 	"log"
 
 	"slim-track/internal/router"
+	"slim-track/internal/storage"
 )
 
 func main() {
-	r := router.SetupRouter()
+	repo, err := storage.NewRepository(storage.DBPathFromEnv())
+	if err != nil {
+		log.Fatalf("failed to initialize database: %v", err)
+	}
+	defer repo.Close()
+
+	r := router.SetupRouter(repo)
 
 	log.Println("server listening on :8080")
 	if err := r.Run(":8080"); err != nil {

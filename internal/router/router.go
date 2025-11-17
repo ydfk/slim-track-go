@@ -4,20 +4,21 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"slim-track/internal/handler"
+	"slim-track/internal/storage"
 )
 
-// SetupRouter 初始化 Gin 引擎和路由
-func SetupRouter() *gin.Engine {
+// SetupRouter ��ʼ�� Gin �����·��
+func SetupRouter(repo *storage.Repository) *gin.Engine {
 	r := gin.Default()
 
-	// 静态资源
+	// ��̬��Դ
 	r.Static("/static", "./static")
 
-	// 模板
+	// ģ��
 	r.LoadHTMLGlob("templates/*.html")
 
-	// 注册路由
-	handler.RegisterChartRoutes(r)
+	// ע��·��
+	handler.RegisterTrackerRoutes(r, repo)
 
 	return r
 }

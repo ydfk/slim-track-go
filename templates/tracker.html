@@ -1,0 +1,122 @@
+{{ define "tracker" }}{{ template "base" . }}{{ end }} {{ define "content" }}
+<div class="tracker-page">
+  <ul class="nav nav-pills nav-fill tracker-tabs" id="trackerTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-record" data-bs-toggle="tab" data-bs-target="#panel-record" type="button" role="tab">记录</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-weight" data-bs-toggle="tab" data-bs-target="#panel-weight" type="button" role="tab">体重（折线图）</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-waist" data-bs-toggle="tab" data-bs-target="#panel-waist" type="button" role="tab">腰围（折线图）</button>
+    </li>
+  </ul>
+
+  <div class="tab-content pt-3">
+    <div class="tab-pane fade show active" id="panel-record" role="tabpanel" aria-labelledby="tab-record">
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
+            <div>
+              <h5 class="mb-1">今日记录</h5>
+              <p class="text-muted small mb-0">只要选择日期并录入数据，系统会自动更新同一天的记录。</p>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm align-self-start" type="button" id="refreshEntries">刷新数据</button>
+          </div>
+          <form id="entryForm" class="row g-3">
+            <div class="col-12 col-md-3">
+              <label for="entryDate" class="form-label">记录日期</label>
+              <input type="date" class="form-control" id="entryDate" required />
+            </div>
+            <div class="col-12 col-md-3">
+              <label for="weightJin" class="form-label">体重（斤）</label>
+              <input type="number" class="form-control" id="weightJin" min="0" step="0.1" required />
+            </div>
+            <div class="col-12 col-md-3">
+              <label for="weightKgPreview" class="form-label">体重（公斤）</label>
+              <input type="text" class="form-control" id="weightKgPreview" readonly />
+            </div>
+            <div class="col-12 col-md-3">
+              <label for="waistCm" class="form-label">腰围（厘米）</label>
+              <input type="number" class="form-control" id="waistCm" min="0" step="0.1" />
+            </div>
+            <div class="col-12">
+              <label for="note" class="form-label">备注</label>
+              <textarea class="form-control" id="note" rows="2" placeholder="可记录饮食、运动或身体状态"></textarea>
+            </div>
+            <div class="col-12 d-flex flex-column flex-md-row align-items-md-center gap-3">
+              <button type="submit" class="btn btn-primary px-4">保存记录</button>
+              <div class="text-muted small" id="formStatus"></div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="mb-3">历史记录</h5>
+          <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+              <thead>
+                <tr>
+                  <th scope="col">日期</th>
+                  <th scope="col">体重（公斤）</th>
+                  <th scope="col">体重（斤）</th>
+                  <th scope="col">腰围（厘米）</th>
+                  <th scope="col">备注</th>
+                  <!-- <th scope="col">更新时间</th> -->
+                </tr>
+              </thead>
+              <tbody id="entryTableBody">
+                <tr>
+                  <td colspan="6" class="text-center text-muted">暂无数据</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="panel-weight" role="tabpanel" aria-labelledby="tab-weight">
+      <div class="card chart-card">
+        <div class="card-body">
+          <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3">
+            <div>
+              <h5 class="mb-1">体重趋势</h5>
+              <p class="text-muted small mb-0">支持公斤/斤切换，点击数据点可查看具体值。</p>
+            </div>
+            <div class="d-flex flex-column flex-sm-row gap-2 align-self-start align-items-start align-items-sm-center">
+              <div class="btn-group btn-group-sm" role="group" aria-label="单位切换">
+                <button type="button" class="btn btn-outline-primary" data-weight-unit="jin">斤</button>
+                <button type="button" class="btn btn-outline-primary active" data-weight-unit="kg">公斤</button>
+              </div>
+              <button class="btn btn-outline-secondary btn-sm" type="button" data-chart-refresh="weight">刷新图表</button>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="weightChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="panel-waist" role="tabpanel" aria-labelledby="tab-waist">
+      <div class="card chart-card">
+        <div class="card-body">
+          <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3">
+            <div>
+              <h5 class="mb-1">腰围趋势</h5>
+              <p class="text-muted small mb-0">单位：厘米，仅展示填写了腰围的数据。</p>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm align-self-start" type="button" data-chart-refresh="waist">刷新图表</button>
+          </div>
+          <div class="chart-container">
+            <canvas id="waistChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{{ end }}
