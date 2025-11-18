@@ -1,0 +1,16 @@
+services:
+  slim-track:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: slim-track:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_PATH=/data/slim-track.db
+    volumes:
+      - slim-track-data:/data
+    restart: unless-stopped
+
+volumes:
+  slim-track-data:

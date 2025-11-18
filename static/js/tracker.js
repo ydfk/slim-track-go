@@ -1,8 +1,30 @@
 (() => {
+  const PAGE_SIZE = 20;
   const state = {
     entries: [],
+    chartEntries: [],
+    pagination: {
+      page: 1,
+      pageSize: PAGE_SIZE,
+      totalPages: 1,
+      total: 0,
+    },
     weightUnit: "jin",
+    chartOrientation: {
+      weight: "vertical",
+      waist: "vertical",
+    },
   };
+
+  const isMobileViewport =
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(max-width: 768px)").matches
+      : false;
+
+  if (isMobileViewport) {
+    state.chartOrientation.weight = "horizontal";
+    state.chartOrientation.waist = "horizontal";
+  }
 
   let weightChart;
   let waistChart;
@@ -19,6 +41,11 @@
     refreshEntries: document.getElementById("refreshEntries"),
     chartRefreshButtons: document.querySelectorAll("[data-chart-refresh]"),
     weightUnitButtons: document.querySelectorAll("[data-weight-unit]"),
+    orientationButtons: document.querySelectorAll("[data-chart-target][data-orientation]"),
+    chartContainers: document.querySelectorAll("[data-chart-container]"),
+    paginationSummary: document.getElementById("paginationSummary"),
+    paginationPrev: document.getElementById("paginationPrev"),
+    paginationNext: document.getElementById("paginationNext"),
   };
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -33,11 +60,14 @@
     selectors.weightJin.addEventListener("input", updateWeightPreview);
 
     if (selectors.refreshEntries) {
-      selectors.refreshEntries.addEventListener("click", () => loadEntries(true));
+      selectors.refreshEntries.addEventListener("click", () => {
+        loadTableEntries(state.pagination.page, true);
+        loadChartEntries();
+      });
     }
 
     selectors.chartRefreshButtons.forEach((btn) => {
-      btn.addEventListener("click", () => loadEntries(true));
+      btn.addEventListener("click", () => loadChartEntries());
     });
 
     selectors.weightUnitButtons.forEach((btn) => {
@@ -48,12 +78,37 @@
         }
         state.weightUnit = unit;
         updateWeightUnitButtons();
-        renderCharts(state.entries);
+        renderCharts();
       });
     });
 
+    selectors.orientationButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.getAttribute("data-chart-target");
+        const orientation = btn.getAttribute("data-orientation");
+        if (!target || !orientation) {
+          return;
+        }
+        if (state.chartOrientation[target] === orientation) {
+          return;
+        }
+        state.chartOrientation[target] = orientation;
+        updateOrientationButtons();
+        updateChartContainerLayout();
+        renderCharts();
+      });
+    });
+
+    if (selectors.tableBody) {
+      selectors.tableBody.addEventListener("click", handleTableClick);
+    }
+
     updateWeightUnitButtons();
-    loadEntries(false);
+    updateOrientationButtons();
+    updateChartContainerLayout();
+    attachPaginationEvents();
+    loadTableEntries(1, false);
+    loadChartEntries();
   });
 
   function setDefaultDate() {
@@ -79,29 +134,65 @@
     selectors.weightKgPreview.value = `${formatNumber(kg, 2)} 公斤`;
   }
 
-  async function loadEntries(showFeedback) {
-    setFormStatus(showFeedback ? "正在刷新数据..." : "");
+  async function loadTableEntries(page = state.pagination.page, showFeedback = false) {
+    if (showFeedback) {
+      setFormStatus("正在刷新列表...");
+    } else {
+      setFormStatus("");
+    }
     try {
-      const response = await fetch("/api/entries");
+      const response = await fetch(`/api/entries?page=${page}&limit=${PAGE_SIZE}`);
       if (!response.ok) {
         throw new Error("加载失败");
       }
       const payload = await response.json();
       state.entries = Array.isArray(payload.entries) ? payload.entries : [];
-      renderTable(state.entries);
-      renderCharts(state.entries);
+      const meta = payload.meta || {};
+      const totalRaw = Number(meta.total);
+      const total = Number.isFinite(totalRaw) && totalRaw >= 0 ? totalRaw : state.entries.length;
+      const pageSizeRaw = Number(meta.pageSize);
+      const pageSize = Number.isFinite(pageSizeRaw) && pageSizeRaw > 0 ? pageSizeRaw : PAGE_SIZE;
+      const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1;
+      const pageRaw = Number(meta.page);
+      const resolvedPage =
+        total > 0 ? Math.min(Math.max(1, Number.isFinite(pageRaw) ? pageRaw : page), totalPages) : 1;
+
+      state.pagination = {
+        page: resolvedPage,
+        pageSize,
+        total,
+        totalPages: totalPages || 1,
+      };
+
+      renderTable();
+      updatePaginationControls();
       if (showFeedback) {
-        setFormStatus("数据已更新", "success");
+        setFormStatus("列表已更新", "success");
       } else {
         setFormStatus("");
       }
     } catch (error) {
-      console.error("加载数据失败", error);
-      setFormStatus("加载数据失败，请稍后再试", "error");
+      console.error("加载列表失败", error);
+      setFormStatus("加载列表数据失败，请稍后再试", "error");
     }
   }
 
-  function renderTable(entries) {
+  async function loadChartEntries() {
+    try {
+      const response = await fetch("/api/entries?limit=0");
+      if (!response.ok) {
+        throw new Error("加载失败");
+      }
+      const payload = await response.json();
+      state.chartEntries = Array.isArray(payload.entries) ? payload.entries : [];
+      renderCharts();
+    } catch (error) {
+      console.error("加载图表数据失败", error);
+    }
+  }
+
+  function renderTable() {
+    const entries = state.entries;
     if (!selectors.tableBody) {
       return;
     }
@@ -110,21 +201,81 @@
     if (!entries.length) {
       const row = selectors.tableBody.insertRow();
       const cell = row.insertCell();
-      cell.colSpan = 6;
+      cell.colSpan = 5;
       cell.className = "text-center text-muted py-4";
       cell.textContent = "暂无记录";
       return;
     }
 
-    entries.forEach((entry) => {
+    entries.forEach((entry, index) => {
       const row = selectors.tableBody.insertRow();
+      row.dataset.entryIndex = String(index);
       row.insertCell().textContent = entry.date || "--";
       row.insertCell().textContent = formatNumber(entry.weightKg, 2);
       row.insertCell().textContent = formatNumber(entry.weightJin, 1);
       row.insertCell().textContent = entry.waistCm != null ? formatNumber(entry.waistCm, 1) : "--";
       row.insertCell().textContent = entry.note || "--";
-      // row.insertCell().textContent = formatDateTime(entry.updatedAt);
     });
+  }
+
+  function handleTableClick(event) {
+    const targetRow = event.target.closest("tr[data-entry-index]");
+    if (!targetRow) {
+      return;
+    }
+    const entryIndex = Number(targetRow.dataset.entryIndex);
+    if (!Number.isInteger(entryIndex) || entryIndex < 0 || entryIndex >= state.entries.length) {
+      return;
+    }
+    populateFormForEntry(state.entries[entryIndex]);
+  }
+
+  function populateFormForEntry(entry) {
+    if (!entry || !selectors.form) {
+      return;
+    }
+    selectors.date.value = entry.date || selectors.date.value;
+    selectors.weightJin.value = formatInputNumber(entry.weightJin);
+    selectors.waistCm.value = entry.waistCm != null ? formatInputNumber(entry.waistCm) : "";
+    selectors.note.value = entry.note || "";
+    updateWeightPreview();
+    setFormStatus(`已载入 ${entry.date} 的记录，可直接修改后保存`, "success");
+  }
+
+  function attachPaginationEvents() {
+    if (selectors.paginationPrev) {
+      selectors.paginationPrev.addEventListener("click", () => {
+        if (state.pagination.page <= 1) {
+          return;
+        }
+        loadTableEntries(state.pagination.page - 1, true);
+      });
+    }
+    if (selectors.paginationNext) {
+      selectors.paginationNext.addEventListener("click", () => {
+        if (state.pagination.page >= state.pagination.totalPages || !state.pagination.total) {
+          return;
+        }
+        loadTableEntries(state.pagination.page + 1, true);
+      });
+    }
+  }
+
+  function updatePaginationControls() {
+    if (selectors.paginationPrev) {
+      selectors.paginationPrev.disabled = state.pagination.page <= 1 || !state.pagination.total;
+    }
+    if (selectors.paginationNext) {
+      const disableNext = !state.pagination.total || state.pagination.page >= state.pagination.totalPages;
+      selectors.paginationNext.disabled = disableNext;
+    }
+    if (selectors.paginationSummary) {
+      if (!state.pagination.total) {
+        selectors.paginationSummary.textContent = "暂无记录";
+      } else {
+        selectors.paginationSummary.textContent = `第 ${state.pagination.page} / ${state.pagination.totalPages} 页，共 ${state.pagination.total} 条记录`;
+      }
+    }
   }
 
   async function handleSubmit(event) {
@@ -158,7 +309,8 @@
       selectors.form.reset();
       updateWeightPreview();
       setDefaultDate();
-      await loadEntries(false);
+      await loadTableEntries(1, false);
+      await loadChartEntries();
     } catch (error) {
       console.error("保存失败", error);
       setFormStatus(error.message || "保存失败，请稍后再试", "error");
@@ -184,12 +336,13 @@
     };
   }
 
-  function renderCharts(entries) {
+  function renderCharts(entriesSource = state.chartEntries) {
     if (typeof Chart === "undefined") {
       return;
     }
 
-    const chronological = [...entries].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const source = Array.isArray(entriesSource) ? entriesSource : [];
+    const chronological = [...source].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
     const labels = chronological.map((entry) => formatChartLabel(entry.date));
     const isKgUnit = state.weightUnit === "kg";
     const weights = chronological.map((entry) => {
@@ -203,6 +356,9 @@
     const waistLabels = waistEntries.map((entry) => formatChartLabel(entry.date));
     const waists = waistEntries.map((entry) => entry.waistCm || 0);
 
+    const weightOrientation = state.chartOrientation.weight === "horizontal" ? "y" : "x";
+    const waistOrientation = state.chartOrientation.waist === "horizontal" ? "y" : "x";
+
     weightChart = mountChart(
       "weightChart",
       weightChart,
@@ -210,13 +366,23 @@
       weights,
       isKgUnit ? "\u4f53\u91cd\uff08\u516c\u65a4\uff09" : "\u4f53\u91cd\uff08\u65a4\uff09",
       "rgba(78, 115, 223, 1)",
-      isKgUnit ? 2 : 1
+      isKgUnit ? 2 : 1,
+      weightOrientation
     );
 
-    waistChart = mountChart("waistChart", waistChart, waistLabels, waists, "\u8170\u56f4\uff08\u5398\u7c73\uff09", "rgba(54, 185, 204, 1)", 1);
+    waistChart = mountChart(
+      "waistChart",
+      waistChart,
+      waistLabels,
+      waists,
+      "\u8170\u56f4\uff08\u5398\u7c73\uff09",
+      "rgba(54, 185, 204, 1)",
+      1,
+      waistOrientation
+    );
   }
 
-  function mountChart(canvasId, instance, labels, values, labelText, color, valueDigits) {
+  function mountChart(canvasId, instance, labels, values, labelText, color, valueDigits, indexAxis) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) {
       return instance;
@@ -224,6 +390,12 @@
     if (instance) {
       instance.destroy();
     }
+
+    const axisKey = indexAxis === "y" ? "x" : "y";
+    const labelAxis = indexAxis === "y" ? "y" : "x";
+    const valueAxis = labelAxis === "x" ? "y" : "x";
+    const isHorizontal = indexAxis === "y";
+    const maxTicks = window.matchMedia("(min-width: 992px)").matches ? 12 : 6;
 
     return new Chart(canvas.getContext("2d"), {
       type: "line",
@@ -246,23 +418,34 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        indexAxis: indexAxis || "x",
         interaction: {
           intersect: false,
           mode: "nearest",
         },
         scales: {
           x: {
+            position: "bottom",
             grid: {
-              display: false,
+              display: labelAxis !== "x" ? true : false,
+              color: "rgba(0,0,0,0.05)",
             },
             ticks: {
-              maxTicksLimit: window.matchMedia("(min-width: 992px)").matches ? 12 : 6,
+              maxTicksLimit: labelAxis === "x" ? maxTicks : undefined,
+              minRotation: 0,
+              maxRotation: 0,
             },
           },
           y: {
+            position: "left",
             beginAtZero: false,
             grid: {
               color: "rgba(0,0,0,0.05)",
+            },
+            ticks: {
+              maxTicksLimit: labelAxis === "y" ? maxTicks : undefined,
+              minRotation: 0,
+              maxRotation: 0,
             },
           },
         },
@@ -272,7 +455,7 @@
           },
           tooltip: {
             callbacks: {
-              label: (ctx) => `${ctx.dataset.label}: ${formatNumber(ctx.parsed.y, valueDigits)}`,
+              label: (ctx) => `${ctx.dataset.label}: ${formatNumber(ctx.parsed[valueAxis], valueDigits)}`,
             },
           },
         },
@@ -284,6 +467,23 @@
     selectors.weightUnitButtons.forEach((btn) => {
       const unit = btn.getAttribute("data-weight-unit");
       btn.classList.toggle("active", unit === state.weightUnit);
+    });
+  }
+
+  function updateOrientationButtons() {
+    selectors.orientationButtons.forEach((btn) => {
+      const target = btn.getAttribute("data-chart-target");
+      const orientation = btn.getAttribute("data-orientation");
+      const isActive = (state.chartOrientation[target] || "vertical") === orientation;
+      btn.classList.toggle("active", isActive);
+    });
+  }
+
+  function updateChartContainerLayout() {
+    selectors.chartContainers.forEach((container) => {
+      const target = container.getAttribute("data-chart-container");
+      const orientation = state.chartOrientation[target] || "vertical";
+      container.classList.toggle("chart-horizontal", orientation === "horizontal");
     });
   }
 
@@ -306,6 +506,17 @@
     } else {
       selectors.formStatus.classList.add("text-muted");
     }
+  }
+
+  function formatInputNumber(value) {
+    if (value === null || value === undefined || value === "") {
+      return "";
+    }
+    const num = Number(value);
+    if (!Number.isFinite(num)) {
+      return "";
+    }
+    return num.toString();
   }
 
   function formatNumber(value, digits) {
@@ -343,3 +554,4 @@
     return `${date.getMonth() + 1}/${date.getDate()}`;
   }
 })();
+

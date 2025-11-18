@@ -46,7 +46,48 @@ func (h *TrackerHandler) HomePage(c *gin.Context) {
 // ListEntries returns the tracked entries in JSON.
 func (h *TrackerHandler) ListEntries(c *gin.Context) {
 	limit := parseLimit(c.DefaultQuery("limit", "0"))
-	entries, err := h.repo.ListEntries(c.Request.Context(), limit)
+	page := parsePage(c.DefaultQuery("page", "1"))
+	ctx := c.Request.Context()
+
+	if limit <= 0 {
+		entries, err := h.repo.ListEntries(ctx, 0, 0)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"entries": entries,
+		})
+		return
+	}
+
+	total, err := h.repo.CountEntries(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	totalPages := 1
+	if total > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+	if totalPages <= 0 {
+		totalPages = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	if page <= 0 {
+		page = 1
+	}
+
+	offset := (page - 1) * limit
+	entries, err := h.repo.ListEntries(ctx, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -56,6 +97,12 @@ func (h *TrackerHandler) ListEntries(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"entries": entries,
+		"meta": gin.H{
+			"page":       page,
+			"pageSize":   limit,
+			"total":      total,
+			"totalPages": totalPages,
+		},
 	})
 }
 
@@ -109,6 +156,14 @@ func parseLimit(value string) int {
 		return 0
 	}
 	return limit
+}
+
+func parsePage(value string) int {
+	page, err := strconv.Atoi(value)
+	if err != nil || page < 1 {
+		return 1
+	}
+	return page
 }
 
 type entryRequest struct {

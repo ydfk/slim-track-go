@@ -135,7 +135,7 @@ RETURNING Id, Date, WeightGongJin, WeightJin, WaistCircumference, Note, CreatedA
 }
 
 // ListEntries returns entries ordered by date descending. A limit <= 0 fetches every row.
-func (r *Repository) ListEntries(ctx context.Context, limit int) ([]WeightEntry, error) {
+func (r *Repository) ListEntries(ctx context.Context, limit, offset int) ([]WeightEntry, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("repository is not initialized")
 	}
@@ -151,8 +151,8 @@ ORDER BY Date DESC, Id DESC`
 	)
 
 	if limit > 0 {
-		query := base + " LIMIT ?"
-		rows, err = r.db.QueryContext(ctx, query, limit)
+		query := base + " LIMIT ? OFFSET ?"
+		rows, err = r.db.QueryContext(ctx, query, limit, offset)
 	} else {
 		rows, err = r.db.QueryContext(ctx, base)
 	}
@@ -175,6 +175,19 @@ ORDER BY Date DESC, Id DESC`
 	}
 
 	return entries, nil
+}
+
+// CountEntries returns the total number of records in the WeightEntries table.
+func (r *Repository) CountEntries(ctx context.Context) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("repository is not initialized")
+	}
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM WeightEntries`).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count entries: %w", err)
+	}
+	return total, nil
 }
 
 func scanEntry(scanner interface {
