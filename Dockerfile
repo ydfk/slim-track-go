@@ -21,6 +21,8 @@ RUN sed -i 's/https/http/g' /etc/apk/repositories \
 WORKDIR /app
 ENV DATABASE_PATH=/data/slim-track.db
 COPY --from=builder /app/slim-track /app/slim-track
+COPY --from=builder /app/templates /app/templates
+COPY --from=builder /app/static /app/static
 
 EXPOSE 8080
 VOLUME ["/data"]
